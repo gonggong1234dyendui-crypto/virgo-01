@@ -1,4 +1,4 @@
-VIRGO-01 v1.0.0 — bundled client software notices
+VIRGO-01 v1.1.0 — bundled client software notices
 
 ----------------------------------------
 

@@ -1,6 +1,6 @@
 {
   "product": "VIRGO-01",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "published": "2026-10-18",
-  "notes": "Independent VIRGO-01 initial release. Windows packages are delivered separately; no automatic installation."
+  "notes": "VIRGO-01 1.1: mobile layout, persistent sessions, grouped devices, real-time presence and encrypted Web Push. Windows packages are delivered separately."
 }
