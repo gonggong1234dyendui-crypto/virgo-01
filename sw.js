@@ -1,5 +1,5 @@
 /* VIRGO-01: public shell cache only. Private data and bearer tokens never enter CacheStorage. */
-const VERSION = '88675bb6470d8332';
+const VERSION = '0133fd6cb8b4d791';
 const CACHE = `virgo-shell-${VERSION}`;
 const base = new URL('./', self.registration.scope);
 // Chromium CacheStorage rejects custom schemes. Desktop assets are already bundled locally.
@@ -23,6 +23,12 @@ function trustedEndpoint(value) {
     if (u.protocol !== 'https:' && !(u.protocol === 'http:' && loopback && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname))) return null;
     return u.origin;
   } catch { return null; }
+}
+function sameMediaFamily(a,b){return a&&b&&a.mediaGeneration===b.mediaGeneration&&a.accountId===b.accountId&&a.sessionId===b.sessionId}
+async function verifyMediaAccount(endpoint,token,family){
+  const response=await fetch(`${endpoint}/api/me`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(10000)});
+  const account=await response.json();
+  if(!response.ok||account.user?.id!==family.accountId)throw Error('account');
 }
 self.addEventListener('install', event => {
   if (cacheShell) event.waitUntil(caches.open(CACHE).then(c => c.addAll(shell.map(p => new URL(p, base).href))));
@@ -51,15 +57,45 @@ self.addEventListener('message', event => {
     if (data.type !== 'VIRGO_AUTH') return reply({ok:false});
     // The binding object is a per-tab generation. Logout or a newer message
     // invalidates pending health checks and all media using older credentials.
-    revokeMedia(source.id);
     const endpoint = trustedEndpoint(data.endpoint);
-    if (!endpoint || typeof data.token !== 'string' || data.token.length < 20 || data.token.length > 1024 || /[\r\n]/.test(data.token) || typeof data.stationId !== 'string') return reply({ok:false});
-    const binding={endpoint,token:data.token,stationId:data.stationId,verified:false,requests:new Set()};
+    if (!endpoint || typeof data.token !== 'string' || data.token.length < 20 || data.token.length > 1024 || /[\r\n]/.test(data.token) || typeof data.stationId !== 'string') {revokeMedia(source.id);return reply({ok:false});}
+    const hasFamily=data.mediaGeneration!==undefined||data.accountId!==undefined||data.sessionId!==undefined;
+    if(hasFamily&&(!Number.isSafeInteger(data.accountId)||data.accountId<=0||typeof data.mediaGeneration!=='string'||!/^[a-zA-Z0-9_-]{16,80}$/.test(data.mediaGeneration)||typeof data.sessionId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(data.sessionId))){revokeMedia(source.id);return reply({ok:false});}
+    const family=hasFamily?{mediaGeneration:data.mediaGeneration,accountId:data.accountId,sessionId:data.sessionId}:null;
+    // Opening another attachment must not cancel an existing download. Only a
+    // genuinely changed credential/station (or logout) invalidates its streams.
+    const existing=sessions.get(source.id);
+    if(existing?.verified&&existing.endpoint===endpoint&&existing.stationId===data.stationId){
+      const sameFamily=sameMediaFamily(existing.family,family),sameLegacy=!existing.family&&!family;
+      if((sameFamily||sameLegacy)&&existing.token===data.token)return reply({ok:true});
+      if(sameFamily){
+        if(existing.pendingRenewal&&existing.pendingRenewalToken===data.token)return reply({ok:await existing.pendingRenewal});
+        // The client rotates this random generation on every login/logout. Only
+        // a validated renewal of the same account/session can retain streams.
+        const revision=existing.renewal=(existing.renewal||0)+1;
+        const pending=(async()=>{
+          try{
+            await verifyMediaAccount(endpoint,data.token,family);
+            if(sessions.get(source.id)!==existing||existing.renewal!==revision)return false;
+            existing.token=data.token;return true;
+          }catch{if(sessions.get(source.id)===existing&&existing.renewal===revision)revokeMedia(source.id);return false;}
+        })();
+        existing.pendingRenewal=pending;
+        existing.pendingRenewalToken=data.token;
+        const accepted=await pending;
+        if(existing.pendingRenewal===pending){delete existing.pendingRenewal;delete existing.pendingRenewalToken;}
+        return reply({ok:accepted});
+      }
+    }
+    revokeMedia(source.id);
+    const binding={endpoint,token:data.token,stationId:data.stationId,family,verified:false,requests:new Set()};
     sessions.set(source.id,binding);
     try {
       const health = await fetch(`${endpoint}/api/health`, {cache:'no-store', credentials:'omit', redirect:'error', signal:AbortSignal.timeout(10000)});
       const identity = await health.json();
       if (!health.ok || !identity.ok || identity.product !== 'VIRGO-01' || identity.stationId !== data.stationId) throw Error('identity');
+      if(sessions.get(source.id)!==binding)return reply({ok:false});
+      if(family)await verifyMediaAccount(endpoint,data.token,family);
       if(sessions.get(source.id)!==binding)return reply({ok:false});
       binding.verified=true;
       // Clean up credentials for closed tabs; no secret serialization.
@@ -107,10 +143,24 @@ async function media(request, event, path) {
   request.signal.addEventListener('abort',abort,{once:true});if(request.signal.aborted)abort();
   const cleanup=()=>{auth.requests.delete(controller);request.signal.removeEventListener('abort',abort)};
   try {
-    const upstream = await fetch(`${auth.endpoint}/api/files/${match[1]}${match[2] || ''}`, {method:request.method,headers,credentials:'omit',cache:'no-store',redirect:'error',signal:controller.signal});
+    const fetchFile=()=>fetch(`${auth.endpoint}/api/files/${match[1]}${match[2] || ''}`, {method:request.method,headers,credentials:'omit',cache:'no-store',redirect:'error',signal:controller.signal});
+    let upstream = await fetchFile();
+    if(upstream.status===401&&sessions.get(event.clientId)===auth){
+      let waited;
+      while(sessions.get(event.clientId)===auth&&auth.pendingRenewal&&auth.pendingRenewal!==waited){waited=auth.pendingRenewal;await waited;}
+      // A native video range can race with token renewal. Its stale 401 must
+      // not revoke an already verified replacement for the same login.
+      if(sessions.get(event.clientId)===auth&&headers.get('Authorization')!==`Bearer ${auth.token}`){
+        await upstream.body?.cancel().catch(()=>{});headers.set('Authorization',`Bearer ${auth.token}`);upstream=await fetchFile();
+      }
+    }
     if(sessions.get(event.clientId)!==auth){await upstream.body?.cancel().catch(()=>{});cleanup();return new Response('Session changed.',{status:401,headers:{'Cache-Control':'no-store'}})}
     const out = new Headers();
     for (const key of ['content-type','content-length','content-range','accept-ranges','content-disposition','etag']) if (upstream.headers.has(key)) out.set(key, upstream.headers.get(key));
+    if(new URL(request.url).searchParams.get('download')==='1'&&upstream.ok){
+      const disposition=out.get('Content-Disposition')||'';
+      out.set('Content-Disposition',disposition?disposition.replace(/^[^;]+/,'attachment'):'attachment');
+    }
     out.set('Cache-Control','no-store'); out.set('X-Content-Type-Options','nosniff');
     out.set('Content-Security-Policy',"default-src 'none'; sandbox");
     if (upstream.status === 401) {revokeMedia(event.clientId);await upstream.body?.cancel().catch(()=>{});cleanup();out.delete('Content-Length');out.delete('Content-Range');out.set('Content-Type','text/plain; charset=utf-8');return new Response('Sign in again to load this media.',{status:401,headers:out})}
