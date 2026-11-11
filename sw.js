@@ -1,5 +1,5 @@
 /* VIRGO-01: public shell cache only. Private data and bearer tokens never enter CacheStorage. */
-const VERSION = '415b752254802e49';
+const VERSION = 'f5fdae7b0fe4144e';
 const CACHE = `virgo-shell-${VERSION}`;
 const base = new URL('./', self.registration.scope);
 // Chromium CacheStorage rejects custom schemes. Desktop assets are already bundled locally.
