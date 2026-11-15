@@ -1,0 +1,16 @@
+{
+  "product": "VIRGO-01",
+  "status": "verified",
+  "version": "1.2.0",
+  "build": "6690d89ee09edfbd",
+  "url": "./VIRGO-01-1.2.0.apk",
+  "sha256": "5ffdea2a308b0e08530961048f02b34a24ffaae844aa16d3dc44fb7199ddbb41",
+  "signingCertificateSha256": "0ee1fcbff0dd50ce12805ae1ecddbdc2bc2970af3b0b3620f10c2309a2e6020a",
+  "bytes": 4168900,
+  "packageName": "chat.virgo.client",
+  "versionCode": 12000,
+  "minSdk": 29,
+  "targetSdk": 35,
+  "minAndroid": 10,
+  "verifiedAt": "2026-11-15T20:27:57.215Z"
+}

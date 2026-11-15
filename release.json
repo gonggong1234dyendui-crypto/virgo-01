@@ -1,6 +1,7 @@
 {
   "product": "VIRGO-01",
-  "version": "1.1.0",
-  "published": "2026-10-18",
-  "notes": "VIRGO-01 1.1: mobile layout, persistent sessions, grouped devices, real-time presence and encrypted Web Push. Windows packages are delivered separately."
+  "version": "1.2.0",
+  "status": "released",
+  "build": "6690d89ee09edfbd",
+  "notes": "网页及 Android 客户端更新：更快连接、后台语音、视频小窗与可恢复文件传输。Android 10+ 和当前系统 WebView；保留现有账号、聊天及专属主题。Windows 管理器无需重新安装。"
 }
