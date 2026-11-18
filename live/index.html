@@ -5,9 +5,18 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.trycloudflare.com; frame-src https://*.trycloudflare.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; manifest-src 'self'; worker-src 'self'; img-src 'self'; connect-src https://*.trycloudflare.com; frame-src https://*.trycloudflare.com; base-uri 'none'; form-action 'none'">
+<meta name="theme-color" content="#f3f3f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171719" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="VIRGO Live">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="./live-180.png">
+<link rel="icon" type="image/png" href="./live-192.png">
 <title>VIRGO Live · 直播入口</title>
 <style>
+:root{--cutout-top:env(safe-area-inset-top,0px);--cutout-right:env(safe-area-inset-right,0px);--cutout-bottom:env(safe-area-inset-bottom,0px);--cutout-left:env(safe-area-inset-left,0px)}
 :root{font-family:"DM Sans","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#232323;background:#f3f3f3;color-scheme:light dark}
 body{min-height:94vh;display:grid;place-items:center;margin:0}
 iframe{position:fixed;inset:0;width:100%;height:100%;height:100dvh;border:0;background:inherit}
@@ -20,6 +29,8 @@ form{margin-top:2rem}label{display:block;font-size:.9rem;font-weight:600;margin-
 #chat-handoff:not([hidden]){position:fixed;z-index:1;inset:auto .75rem max(.75rem,env(safe-area-inset-bottom)) auto;display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem .35rem 1rem;border-radius:1rem;background:#292929;color:white;box-shadow:0 4px 22px #0003}
 #chat-handoff a{color:inherit;font-weight:600;text-underline-offset:.2em}
 #chat-handoff button{min-width:44px;min-height:44px;color:inherit;background:transparent;font-size:1.25rem}
+#install-sheet{box-sizing:border-box;width:min(25rem,calc(100% - 2rem));max-height:85dvh;overflow:auto;border:1px solid #8886;border-radius:18px;padding:1.4rem;color:inherit;background:Canvas}
+#install-sheet::backdrop{background:#1119}#install-sheet h2{margin:0;font-size:1.3rem}#install-sheet footer{display:flex;justify-content:flex-end;gap:.5rem}#install-sheet button{min-height:44px}
 </style>
 </head><body><main>
 <div class="brand"><i aria-hidden="true"></i>VIRGO Live</div>
@@ -37,6 +48,7 @@ form{margin-top:2rem}label{display:block;font-size:.9rem;font-weight:600;margin-
 <a id="open-chat" target="_blank" rel="noopener noreferrer">打开 VIRGO 聊天通知 ↗</a>
 <button id="dismiss-chat" type="button" aria-label="关闭聊天通知入口">×</button>
 </aside>
+<dialog id="install-sheet" aria-labelledby="install-title"><h2 id="install-title">添加到主屏幕</h2><p id="install-help"></p><footer><button type="button" id="install-close">关闭</button><button type="button" id="install-confirm" hidden>安装 VIRGO Live</button></footer></dialog>
 <script>
 const seed={"endpoint":"https://optimal-qualifications-acres-length.trycloudflare.com","signature":"lr0s_qwJMG9LgbHto9bK25-H4ozBJYa0fkTGFL7MOcD60JdwrzoN-z7SxCWyPHoQsiJuzVQpzlScYjYgmBQ2aQ","key":{"kty":"EC","crv":"P-256","x":"uEqxiYrxd7-Z4Dzm_D-bLEYZqM5symxNsxNBvC8k6x4","y":"0ZW-IQPmH0OUAecKtDhcqBFiec5lLANLQVDlJit3WmI"}};
 const storageKey='virgo-live.verified-locator.v1';
@@ -47,6 +59,85 @@ const message=document.getElementById('message');
 const inviteForm=document.getElementById('resolve-invite');
 const home='https://gonggong1234dyendui-crypto.github.io/virgo-01/live/';
 let frame=null,live=null,attempt=0;
+// This code runs on the fixed Pages origin. The launcher dispatches requests here
+// only after checking the signed endpoint and the current iframe's own window.
+const rememberKey = 'virgo-live.remember.v1';
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const liveToken = /^[A-Za-z0-9_-]{43}$/;
+function handleRemember(event) {
+  const {op,requestId,token,deviceId,expectedToken}=event.data;
+  if(!uuid.test(requestId) || !['read','write','forget'].includes(op))return;
+  const reply={type:'virgo-live-remember-result',requestId,token:null,deviceId:null,stored:false};
+  try {
+    const raw=localStorage.getItem(rememberKey);
+    let previous;
+    try{previous=JSON.parse(raw);}catch{}
+    let record={token:liveToken.test(previous?.token)?previous.token:null,deviceId:uuid.test(previous?.deviceId)?previous.deviceId:null};
+    if(op==='write'){
+      if(!uuid.test(deviceId) || (token!=null && !liveToken.test(token)))return;
+      record=token?{deviceId,token}:{deviceId:record.deviceId||deviceId,token:record.token};
+      localStorage.setItem(rememberKey,JSON.stringify(record));
+    }else if(op==='forget' && liveToken.test(expectedToken) && record.token===expectedToken){
+      record.token=null;
+      localStorage.setItem(rememberKey,JSON.stringify(record));
+    }
+    Object.assign(reply,record,{stored:true});
+  }catch{}
+  event.source.postMessage(reply,event.origin);
+}
+window.addEventListener('storage',event=>{
+  if((event.key===rememberKey || event.key===null) && frame && live)
+    frame.contentWindow.postMessage({type:'virgo-live-remember-changed'},live.endpoint);
+});
+
+let fieldFocused=false;
+function sendInsets(){
+  if(!frame || !live)return;
+  const style=getComputedStyle(document.documentElement),insets={};
+  for(const side of ['top','right','bottom','left'])insets[side]=parseFloat(style.getPropertyValue('--cutout-'+side))||0;
+  frame.contentWindow.postMessage({type:'virgo-live-insets',insets},live.endpoint);
+}
+window.addEventListener('resize',sendInsets);
+function fitLiveViewport(){
+  if(!frame)return;
+  const view=window.visualViewport;
+  const keyboard=fieldFocused && view && Math.abs(view.scale-1)<.05 && innerHeight-view.height>100;
+  frame.style.height=keyboard?Math.floor(view.height)+'px':'';
+  frame.style.top=keyboard?Math.max(0,Math.floor(view.offsetTop))+'px':'';
+}
+window.visualViewport?.addEventListener('resize',fitLiveViewport);
+window.visualViewport?.addEventListener('scroll',fitLiveViewport);
+
+let installPrompt=null;
+const installDialog=document.getElementById('install-sheet');
+const confirmInstall=document.getElementById('install-confirm');
+const installHelp=document.getElementById('install-help');
+function installCopy() {
+  const standalone=matchMedia('(display-mode: standalone)').matches || navigator.standalone===true;
+  confirmInstall.hidden=standalone || !installPrompt;
+  if(standalone)installHelp.textContent='你正在主屏幕应用中使用 VIRGO Live。';
+  else if(installPrompt)installHelp.textContent='安装后，可以从主屏幕直接打开直播大厅。';
+  else if(/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1))
+    installHelp.textContent='在 Safari 点「分享」，选择「添加到主屏幕」。如果看到「作为网页 App 打开」，请将它开启。';
+  else installHelp.textContent='在浏览器菜单选择「安装应用」或「添加到主屏幕」。如果没有这些选项，可用 Safari、Chrome 或 Edge 打开固定直播网址。';
+}
+function openInstall(){
+  installCopy();
+  if(!installDialog.open)installDialog.showModal();
+}
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;if(installDialog.open)installCopy();});
+window.addEventListener('appinstalled',()=>{installPrompt=null;installHelp.textContent='VIRGO Live 已安装。';confirmInstall.hidden=true;});
+document.getElementById('install-close').onclick=()=>installDialog.close();
+confirmInstall.onclick=async()=>{
+  const prompt=installPrompt;
+  if(!prompt)return;
+  installPrompt=null;confirmInstall.hidden=true;
+  try{await prompt.prompt();const choice=await prompt.userChoice;if(choice.outcome==='accepted')installDialog.close();else installCopy();}
+  catch{installCopy();}
+};
+if('serviceWorker' in navigator && /\/live\/(?:index\.html)?$/.test(location.pathname))
+  navigator.serviceWorker.register('./live-sw.js',{scope:'./',updateViaCache:'none'}).catch(()=>{});
+
 const handoff=document.getElementById('chat-handoff');
 const openChat=document.getElementById('open-chat');
 function dismissChat(){handoff.hidden=true;openChat.removeAttribute('href');}
@@ -55,11 +146,13 @@ document.getElementById('dismiss-chat').onclick=dismissChat;
 openChat.addEventListener('click',()=>setTimeout(dismissChat,0));
 // The existing chat worker may focus its most recent window, including this extension.
 // Keep the call mounted and give the user an explicit chat action in a separate tab.
-navigator.serviceWorker?.addEventListener('message',event=>{
+navigator.serviceWorker?.addEventListener('message',async event=>{
   const worker=event.source, data=event.data;
-  if(!worker || worker!==navigator.serviceWorker.controller ||
+  if(!worker ||
       worker.scriptURL!==new URL('../sw.js',location.href).href ||
       data?.type!=='VIRGO_NOTIFICATION_NAVIGATE')return;
+  const chatRegistration=await navigator.serviceWorker.getRegistration(new URL('../',location.href)).catch(()=>null);
+  if(worker!==chatRegistration?.active)return;
   if(typeof data.stationId!=='string' || !data.stationId.length || data.stationId.length>80 ||
       !Number.isSafeInteger(data.accountId) || data.accountId<=0)return;
   const route={stationId:data.stationId,accountId:data.accountId};
@@ -129,12 +222,15 @@ function mount(locator,room){
   next.allow='camera; microphone; display-capture; autoplay; fullscreen; web-share; clipboard-write; picture-in-picture';
   next.allowFullscreen=true;
   // The trusted live app runs in its own origin. No top-level navigation permission is delegated.
-  next.setAttribute('sandbox','allow-scripts allow-same-origin allow-forms allow-modals allow-downloads');
+  next.setAttribute('sandbox','allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-orientation-lock');
   const destination=new URL(live.endpoint+'/');
   if(room)destination.hash=new URLSearchParams({room}).toString();
   next.src=destination.href;
   if(frame) frame.replaceWith(next); else document.body.append(next);
   frame=next;
+  fieldFocused=false;
+  next.addEventListener('load',sendInsets);
+  fitLiveViewport();
   document.querySelector('main').hidden=true;
   canonical(room);
 }
@@ -164,6 +260,10 @@ async function connect(url=new URL(location.href),strictInvite=false){
 window.addEventListener('message',event=>{
   if(!live||event.origin!==live.endpoint||event.source!==frame?.contentWindow)return;
   const data=event.data;
+  if(data?.type==='virgo-live-remember'){handleRemember(event);return;}
+  if(data?.type==='virgo-live-install'){openInstall();return;}
+  if(data?.type==='virgo-live-insets-request'){sendInsets();return;}
+  if(data?.type==='virgo-live-field-focus'){fieldFocused=data.focused===true;fitLiveViewport();return;}
   if(data?.type==='virgo-live-open-chat'){
     showChatLink(new URL('../',home),'在新页面打开 VIRGO 聊天 ↗');return;
   }
