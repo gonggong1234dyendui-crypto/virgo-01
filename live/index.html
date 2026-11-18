@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://*.trycloudflare.com; frame-src https://*.trycloudflare.com; base-uri 'none'; form-action 'none'">
+<title>VIRGO Live · 直播入口</title>
+<style>
+:root{font-family:"DM Sans","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#232323;background:#f3f3f3;color-scheme:light dark}
+body{min-height:94vh;display:grid;place-items:center;margin:0}
+iframe{position:fixed;inset:0;width:100%;height:100%;height:100dvh;border:0;background:inherit}
+main{width:min(26rem,85vw);padding:2rem 0}.brand{font-size:1.15rem;font-weight:800;letter-spacing:.02em}
+i{display:inline-block;background:#23885d;border-radius:50%;width:.6em;height:.6em;margin-right:.5em}
+h1{font-size:clamp(2rem,6vw,3rem);font-weight:650;line-height:1.18;margin:1.5rem 0 .8rem}
+p{line-height:1.65;color:#575757}button{font:inherit;background:#292929;color:white;border:none;padding:.8rem 1.3rem;border-radius:.65rem}
+form{margin-top:2rem}label{display:block;font-size:.9rem;font-weight:600;margin-bottom:.45rem}input{width:100%;box-sizing:border-box;font:inherit;color:inherit;background:transparent;border:1px solid #819087;border-radius:.5rem;padding:.7rem .8rem;margin-bottom:.6rem}
+@media(prefers-color-scheme:dark){:root{background:#101010;color:#e9e9e9}p{color:#b6b6b6}button{background:#eee;color:#191919}}
+#chat-handoff:not([hidden]){position:fixed;z-index:1;inset:auto .75rem max(.75rem,env(safe-area-inset-bottom)) auto;display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem .35rem 1rem;border-radius:1rem;background:#292929;color:white;box-shadow:0 4px 22px #0003}
+#chat-handoff a{color:inherit;font-weight:600;text-underline-offset:.2em}
+#chat-handoff button{min-width:44px;min-height:44px;color:inherit;background:transparent;font-size:1.25rem}
+</style>
+</head><body><main>
+<div class="brand"><i aria-hidden="true"></i>VIRGO Live</div>
+<h1 id="title">正在连接直播站</h1>
+<p id="message" role="status">正在确认服务器地址…</p>
+<button type="button" id="retry" hidden>重新连接</button>
+<form id="resolve-invite" hidden>
+<label for="invitation">或粘贴房主的新邀请</label>
+<input id="invitation" type="text" required inputmode="url" maxlength="8192" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="粘贴完整邀请消息或链接">
+<button type="submit">打开邀请</button>
+</form>
+<noscript>请开启浏览器的 JavaScript 后重新打开直播链接。</noscript>
+</main>
+<aside id="chat-handoff" hidden aria-live="polite">
+<a id="open-chat" target="_blank" rel="noopener noreferrer">打开 VIRGO 聊天通知 ↗</a>
+<button id="dismiss-chat" type="button" aria-label="关闭聊天通知入口">×</button>
+</aside>
+<script>
+const seed={"endpoint":"https://optimal-qualifications-acres-length.trycloudflare.com","signature":"lr0s_qwJMG9LgbHto9bK25-H4ozBJYa0fkTGFL7MOcD60JdwrzoN-z7SxCWyPHoQsiJuzVQpzlScYjYgmBQ2aQ","key":{"kty":"EC","crv":"P-256","x":"uEqxiYrxd7-Z4Dzm_D-bLEYZqM5symxNsxNBvC8k6x4","y":"0ZW-IQPmH0OUAecKtDhcqBFiec5lLANLQVDlJit3WmI"}};
+const storageKey='virgo-live.verified-locator.v1';
+const encoder=new TextEncoder();
+const retry=document.getElementById('retry');
+const title=document.getElementById('title');
+const message=document.getElementById('message');
+const inviteForm=document.getElementById('resolve-invite');
+const home='https://gonggong1234dyendui-crypto.github.io/virgo-01/live/';
+let frame=null,live=null,attempt=0;
+const handoff=document.getElementById('chat-handoff');
+const openChat=document.getElementById('open-chat');
+function dismissChat(){handoff.hidden=true;openChat.removeAttribute('href');}
+function showChatLink(url,label){openChat.href=url.href;openChat.textContent=label;handoff.hidden=false;}
+document.getElementById('dismiss-chat').onclick=dismissChat;
+openChat.addEventListener('click',()=>setTimeout(dismissChat,0));
+// The existing chat worker may focus its most recent window, including this extension.
+// Keep the call mounted and give the user an explicit chat action in a separate tab.
+navigator.serviceWorker?.addEventListener('message',event=>{
+  const worker=event.source, data=event.data;
+  if(!worker || worker!==navigator.serviceWorker.controller ||
+      worker.scriptURL!==new URL('../sw.js',location.href).href ||
+      data?.type!=='VIRGO_NOTIFICATION_NAVIGATE')return;
+  if(typeof data.stationId!=='string' || !data.stationId.length || data.stationId.length>80 ||
+      !Number.isSafeInteger(data.accountId) || data.accountId<=0)return;
+  const route={stationId:data.stationId,accountId:data.accountId};
+  if(Number.isSafeInteger(data.roomId) && data.roomId>0)route.roomId=data.roomId;
+  if(typeof data.callId==='string' && /^[a-f0-9-]{36}$/.test(data.callId))route.callId=data.callId;
+  if(['friends','calls'].includes(data.tab))route.tab=data.tab;
+  const chat=new URL('../',home);
+  chat.hash='notify='+encodeURIComponent(JSON.stringify(route));
+  showChatLink(chat,'打开 VIRGO 聊天通知 ↗');
+});
+function bytes(value) {
+  if(typeof value!=='string'||!/^[A-Za-z0-9_-]{86}$/.test(value))throw Error('Invalid signature');
+  return Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+}
+function challenge(){
+  return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(18)))).replace(/\+/g,'-').replace(/\//g,'_');
+}
+function stored(){
+  try{return JSON.parse(localStorage.getItem(storageKey));}catch{return null;}
+}
+async function authenticate(item,key,signal){
+  const url=item?.endpoint;
+  if(typeof url!=='string'||!/^https:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.trycloudflare\.com$/.test(url))throw Error('Invalid origin');
+  const verify=(stamp,text)=>crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,bytes(stamp),encoder.encode(text));
+  if(!await verify(item.signature,'VIRGO-LIVE-LOCATOR-V1\n'+url))throw Error('Unknown origin');
+  const nonce=challenge();
+  const response=await fetch(url+'/api/health?challenge='+nonce,{
+    signal,mode:'cors',credentials:'omit',redirect:'error',cache:'no-store',referrerPolicy:'no-referrer'
+  });
+  if(!response.ok)throw Error('Unavailable');
+  const health=await response.json();
+  if(!health.ok||health.service!=='virgo-live'||!await verify(health.proof,'VIRGO-LIVE-HEALTH-V1\n'+url+'\n'+nonce))throw Error('Wrong station');
+  return {endpoint:url,signature:item.signature};
+}
+function roomId(url){
+  const id=url.searchParams.get('room') || new URLSearchParams(url.hash.slice(1)).get('room');
+  return /^[A-Za-z0-9_-]{6,24}$/.test(id || '') ? id : '';
+}
+function invitation(url){
+  const params=new URLSearchParams(url.hash.slice(1));
+  let endpoint=params.get('e');
+  if(endpoint && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(endpoint)) endpoint='https://'+endpoint+'.trycloudflare.com';
+  return {endpoint,signature:params.get('s')};
+}
+function official(value){
+  if(typeof value!=='string'||value.length>1200)return null;
+  try{
+    const url=new URL(value);
+    if(!url.username&&!url.password&&url.origin+url.pathname===home)return url;
+  }catch{}
+  return null;
+}
+function canonical(room){
+  const out=new URL(location.pathname,location.origin);
+  if(room)out.searchParams.set('room',room);
+  if(room && live && live.endpoint!==seed.endpoint){
+    const slug=new URL(live.endpoint).hostname.split('.')[0];
+    out.hash=new URLSearchParams({e:slug,s:live.signature}).toString();
+  }
+  history.replaceState(null,'',out);
+}
+function mount(locator,room){
+  live=locator;
+  const next=document.createElement('iframe');
+  next.title='VIRGO Live 直播工作室';
+  next.referrerPolicy='no-referrer';
+  next.allow='camera; microphone; display-capture; autoplay; fullscreen; web-share; clipboard-write; picture-in-picture';
+  next.allowFullscreen=true;
+  // The trusted live app runs in its own origin. No top-level navigation permission is delegated.
+  next.setAttribute('sandbox','allow-scripts allow-same-origin allow-forms allow-modals allow-downloads');
+  const destination=new URL(live.endpoint+'/');
+  if(room)destination.hash=new URLSearchParams({room}).toString();
+  next.src=destination.href;
+  if(frame) frame.replaceWith(next); else document.body.append(next);
+  frame=next;
+  document.querySelector('main').hidden=true;
+  canonical(room);
+}
+async function connect(url=new URL(location.href),strictInvite=false){
+  const seq=++attempt;
+  retry.hidden=true;inviteForm.hidden=true;title.textContent='正在连接直播站';message.textContent='正在确认服务器地址…';
+  const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),8000);
+  try{
+    const invite=invitation(url);
+    const options=strictInvite && invite.endpoint ? [invite] : [invite,stored(),seed];
+    const candidates=options.filter((entry,i,all)=>entry?.endpoint&&all.findIndex(x=>x?.endpoint===entry.endpoint && x.signature===entry.signature)===i);
+    const key=await crypto.subtle.importKey('jwk',seed.key,{name:'ECDSA',namedCurve:'P-256'},false,['verify']);
+    const current=await Promise.any(candidates.map(candidate=>authenticate(candidate,key,abort.signal)));
+    if(seq!==attempt)return;
+    try{localStorage.setItem(storageKey,JSON.stringify(current));}catch{}
+    mount(current,roomId(url));
+  }catch{
+    if(seq!==attempt)return;
+    if(frame && live){
+      frame.contentWindow.postMessage({type:'virgo-live-error',message:'邀请地址验证失败或直播站暂时无法连接。'},live.endpoint);
+      return;
+    }
+    title.textContent='暂时连不上直播站';
+    message.textContent='可以重试，或打开房主最新分享的邀请链接。';retry.hidden=false;inviteForm.hidden=false;
+  }finally{clearTimeout(timer);abort.abort();}
+}
+window.addEventListener('message',event=>{
+  if(!live||event.origin!==live.endpoint||event.source!==frame?.contentWindow)return;
+  const data=event.data;
+  if(data?.type==='virgo-live-open-chat'){
+    showChatLink(new URL('../',home),'在新页面打开 VIRGO 聊天 ↗');return;
+  }
+  if(!data || !['virgo-live-room','virgo-live-open'].includes(data.type) || typeof data.url!=='string' || data.url.length>1200)return;
+  const target=official(data.url);
+  if(!target)return;
+  const room=roomId(target);
+  if(data.type==='virgo-live-room')canonical(room);
+  else if(room)connect(target,true);
+});
+window.addEventListener('popstate',()=>connect());
+inviteForm.onsubmit=event=>{
+  event.preventDefault();
+  const input=document.getElementById('invitation');
+  const embedded=input.value.slice(0,8192).match(/https:\/\/[^\s\u3000-\u303f\uff00-\uffef<>"“”]+/g)||[];
+  const target=embedded.map(text=>official(text.replace(/[)\].,!;]+$/,''))).find(url=>url && roomId(url));
+  if(!target||!roomId(target)||!invitation(target).endpoint||!invitation(target).signature){
+    message.textContent='请粘贴房主最新分享的完整 VIRGO Live 邀请链接。';input.focus();return;
+  }
+  connect(target,true);
+};
+retry.onclick=()=>connect();connect();
+</script></body></html>
